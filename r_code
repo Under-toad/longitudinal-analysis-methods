@@ -65,18 +65,18 @@ for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
   logist.modslope.exp<-numeric() #slope coefficient in model of outcome on slope of above model
   logist.modcons.exp<-numeric()
   logist.modinterceptcoef.exp<-numeric()
-  #set number of obs per group (half total obs)
+  
+  #set number of observations and simulations
   n<-1000
   nsim<-1000
   marks<-nsim/20
+  
+  #vector to collect errors
   error.counter<-numeric()
   #loop through simulations
   for (i in 1:nsim) {
-    if (i%%marks==0){
-      print(i)
-    }
-    
-    #set parameters
+        
+    #set up DAG with DAGITTY
     
     if (mainweight=="mainweight0"){
       g<-dagitty("dag{
@@ -144,10 +144,12 @@ for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
                outcome=3,
                U= 1.5))
     
+    #plot DAG
     png(filename=paste("DAG_", mainweight, ".png", sep=""), width=8, height=6, units="in", res=100)
     plot(g)
     dev.off()
     
+    #simulate data
     data<-data.frame(simulateSEM(g, N=n))
     data$var0<-data$zs0*2+4
     data$var1<-data$zs1*2+8
@@ -157,13 +159,14 @@ for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
     data$above<-c(rep(0, n))
     data$above[which(data$outcome>=6.5)]<-1
     
-    #reshape and label according to which half of data set they were simulated in (to facilitate plotting at very end of script)
+    #reshape data
     
     data$id<-c(1:n)
     data.long<-reshape(data, idvar="id", direction="long", timevar="time", sep="", varying=c("var0", "var1", "var2", "zs0", "zs1", "zs2"))
     data.long$above<-factor(data.long$above)
     data.long$timec<-data.long$time-1
     
+    #multilevel model with outcome as covariate
     mlmod<-tryCatch({expr=lme(var~1 + above + timec + above*timec, random= ~ 1+timec|id, data=data.long, control=ctrl, cor=corAR1(form=~timec|id))},
                     error=function(e){return(NA)})
     if(is.na(mlmod)==F){   
@@ -203,6 +206,7 @@ for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
       error.counter<-c(error.counter, i+0.1)
     }
     
+    #multilevel model in two-step process
     mlmodgrp<-tryCatch({expr=lme(fixed=var~1  + timec, random= ~ 1+timec|id, data=data.long, control=ctrl, cor=corAR1(form=~timec|id))},
                        error=function(b){return(NA)})#random slope model for exposure in terms of time
     if(is.na(mlmodgrp)==F){  
@@ -273,7 +277,7 @@ for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
     meansbp<-c(meansbp, mean(data$outcome))
     sdsbp<-c(sdsbp, sd(data$outcome))
   }
-  
+  #collect results
   results<-data.frame(cbind(zscore0, zscore1, zscore2, bzscore0, bzscore1, bzscore2, mean0, mean1, mean2, mean0low, mean1low, mean2low, 
                             mean0high, mean1high, mean2high, cor0, cor1, cor2, reg0, reg1, reg2, mlmbout, mlmbtime, mlmbintr, mlmcons,
                             mlm.rand.intr, mlm.resid,mlm.phi, fit0ab, fit1ab, fit2ab, fit0be, fit1be, fit2be, logist.modslope,logist.modcons, logist.modinterceptcoef, 
@@ -282,25 +286,16 @@ for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
   write.csv(results, file=paste("resultsdata_", mainweight, ".csv", sep=""))
   write.csv(error.counter, file=paste("error.counter", mainweight, ".csv", sep=""))
   
-  #these two plots just visualise the patterns in the last set of data simulated
-  data<-data[sample(nrow(data), 50),]
-  data.long<-reshape(data, idvar="id", direction="long", timevar="time", sep="", varying=c("var0", "var1", "var2", "zs0", "zs1", "zs2"))
-  
-  png(filename=paste("spaghetti_plot_simulate_in_parts", mainweight, ".png", sep=""), width=8, height=6, units="in", res=100)
-  print(ggplot(data=data.long, aes(x=time, y=var, group=id, colour=factor(above))) +
-          geom_line() +
-          theme_bw()+
-          scale_colour_discrete(name="Hypertension")+
-          labs(x="Age (years)", y="Length(cm)"))
-  dev.off()
-  
   sink(file=NULL)
 }
 
+#analyse each set of results
 for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
   sink(file=paste("analyse_simulate_in_parts", mainweight, ".txt", sep=""), type="output", split=T)
   
   data<-read.csv(file=paste("resultsdata_", mainweight, ".csv", sep=""))
+  
+  #collect errors and remove results from these simulations
   errors<-read.csv(file=paste("error.counter", mainweight, ".csv", sep=""))
   errors<-round(errors[,2], 0)
   data[errors,]<-NA
@@ -369,7 +364,7 @@ for (mainweight in c("mainweight0", "mainweight1", "mainweight2")){
   
   dev.off()
   
-  #generate tables as per paper
+  #generate tables as per paper (table 1 based on inputs for simulation)
   
   tab2<-data.frame(cbind(c(paste(round(allmeans["mean0"],3), "(", round(allquantiles[1, "mean0"],3), ", ", round(allquantiles[2, "mean0"],3), ")", sep=""), paste(round(allmeans["sd0"],3), "(", round(allquantiles[1, "sd0"],3), ", ", round(allquantiles[2, "sd0"],3), ")", sep=""), paste(round(allmeans["cor0"],3), "(", round(allquantiles[1, "cor0"],3), ", ", round(allquantiles[2, "cor0"],3), ")", sep="")),
                          c(paste(round(allmeans["mean1"],3), "(", round(allquantiles[1, "mean1"],3), ", ", round(allquantiles[2, "mean1"],3), ")", sep=""), paste(round(allmeans["sd1"],3), "(", round(allquantiles[1, "sd1"],3), ", ", round(allquantiles[2, "sd1"],3), ")", sep=""), paste(round(allmeans["cor1"],3), "(", round(allquantiles[1, "cor1"],3), ", ", round(allquantiles[2, "cor1"],3), ")", sep="")),
